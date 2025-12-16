@@ -1,2 +1,4 @@
 groq
 pybase64
+fastapi
+uvicorn
