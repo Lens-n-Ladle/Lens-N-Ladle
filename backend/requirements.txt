@@ -2,3 +2,4 @@ groq
 pybase64
 fastapi
 uvicorn
+python-multipart
