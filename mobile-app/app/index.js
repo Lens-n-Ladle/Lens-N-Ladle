@@ -28,7 +28,7 @@ export default function Index() {
     if (cameraRef.current) {
       try {
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.5, // Compress for speed
+          quality: 0.5,
           base64: false, 
         });
         setPhotoUri(photo.uri);
@@ -42,9 +42,8 @@ export default function Index() {
     if (!photoUri) return;
 
     setLoading(true);
-    setRecipe(""); // Clear previous recipe
+    setRecipe("");
 
-    // 1. Prepare the image data
     const formData = new FormData();
     formData.append('file', {
       uri: photoUri,
@@ -53,27 +52,29 @@ export default function Index() {
     });
 
     try {
-      // 2. Open the Real-time Stream
       const es = new EventSource(API_URL, {
         method: "POST",
         headers: { "Content-Type": "multipart/form-data" },
         body: formData,
+        pollingInterval: 0 // Disable polling
       });
 
-      // 3. Listen for words coming from the server
+      es.addEventListener("open", () => {
+        console.log("Connection Opened!");
+      });
+
       es.addEventListener("message", (event) => {
         if (event.data === "[DONE]") {
           es.close();
           setLoading(false);
         } else {
-          // Fix newlines that we escaped in Python
           const text = event.data.replaceAll("\\n", "\n");
-          setRecipe((prev) => prev + text);
+          setRecipe((prev) => prev + " " + text);
         }
       });
 
       es.addEventListener("error", (err) => {
-        console.error("Stream Error:", err);
+        console.error("Stream Error:", JSON.stringify(err));
         es.close();
         setLoading(false);
         alert("Connection Error. Check your IP address!");
@@ -91,33 +92,29 @@ export default function Index() {
     setLoading(false);
   };
 
-  // --- RENDER RESULTS SCREEN ---
   if (photoUri) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.resultContainer}>
-          <Image source={{ uri: photoUri }} style={styles.previewImage} />
-          
-          <Text style={styles.header}>AI Chef says:</Text>
-          
-          <ScrollView style={styles.scrollView}>
-            {loading && recipe === "" && <ActivityIndicator size="large" color="#00ff00" />}
-            <Text style={styles.recipeText}>{recipe}</Text>
-          </ScrollView>
-          
-          <View style={styles.buttonRow}>
-            <Button title="Retake" onPress={reset} color="red" />
-            {/* Only show Analyze button if we haven't started yet */}
-            {recipe === "" && !loading && (
-              <Button title="Get Recipe" onPress={analyzeFood} />
-            )}
-          </View>
+      <View style={styles.resultContainer}>
+        <Image source={{ uri: photoUri }} style={styles.previewImage} />
+        
+        <Text style={styles.header}>AI Chef says:</Text>
+        
+        <ScrollView style={styles.scrollView}>
+          {loading && recipe === "" && <ActivityIndicator size="large" color="#00ff00" />}
+          <Text style={styles.recipeText}>{recipe}</Text>
+        </ScrollView>
+        
+        <View style={styles.buttonRow}>
+          <Button title="Retake" onPress={reset} color="red" />
+          {recipe === "" && !loading && (
+            <Button title="Get Recipe" onPress={analyzeFood} />
+          )}
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  // --- RENDER CAMERA SCREEN ---
+
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} facing="back" ref={cameraRef}>

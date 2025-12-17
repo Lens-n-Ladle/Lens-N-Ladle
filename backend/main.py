@@ -3,14 +3,28 @@ import asyncio
 import random
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from groq import Groq
+import base64
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (phone, web, etc.)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 def get_local_ip():
     """Utility to find the computer's LAN IP address."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # This doesn't actually connect to anything, just finds the route
         s.connect(('8.8.8.8', 80))
         ip = s.getsockname()[0]
     except Exception:
@@ -23,38 +37,44 @@ def get_local_ip():
 async def scan_food(file: UploadFile = File(...)):
     print(f"📸 Image received! Filename: {file.filename}")
     
-    # 1. Simulate reading the file (to prove upload works)
     contents = await file.read()
+    encoded_image = base64.b64encode(contents).decode('utf-8')
     print(f"📦 File size: {len(contents)} bytes")
 
-    # 2. The Mock Streaming Logic
-    async def fake_recipe_generator():
-        # A list of random fake recipes to choose from
-        recipes = [
-            "Start by chopping the onions.\nSauté them until golden brown.\nAdd garlic and ginger.",
-            "Mix flour and sugar in a bowl.\nAdd two eggs and whisk vigorously.\nBake at 180°C.",
-            "This looks like a delicious Pizza!\n1. Prepare the dough.\n2. Add tomato sauce.\n3. Add mozzarella."
-        ]
-        
-        selected_recipe = random.choice(recipes)
-        words = selected_recipe.split(" ") # Split into words to simulate typing
+    async def recipe_generator(encoded_image):
+        yield ": ping\n\n" 
+        yield "data: ...Thinking...\n\n"
 
-        # Simulate "AI Thinking" delay
-        yield f"data: ...Analyzing image...\n\n"
-        await asyncio.sleep(1.0) 
+        chat_completion = client.chat.completions.create(
+                                messages=[
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": "Tell me the recipe for this image?"},
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": f"data:image/jpeg;base64,{encoded_image}",
+                                                },
+                                            },
+                                        ],
+                                    }
+                                ],
+                                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                                stream=True
+                            )
 
-        # Simulate "Typing"
-        for word in words:
-            # Send word + space
-            yield f"data: {word} \n\n" 
-            # Random delay between words (0.05s to 0.3s) to feel human
-            await asyncio.sleep(random.uniform(0.05, 0.3))
-        
-        # Signal completion
+        for chunk in chat_completion:
+            content =  chunk.choices[0].delta.content
+
+            if content:
+                clean_content = content.replace("\n", "\\n")
+                
+                yield f"data: {clean_content}\n\n" # Necessary SSE Format
+            
         yield "data: [DONE]\n\n"
 
-    # 3. Return the stream
-    return StreamingResponse(fake_recipe_generator(), media_type="text/event-stream")
+    return StreamingResponse(recipe_generator(encoded_image), media_type="text/event-stream")
 
 @app.get("/")
 def read_root():
