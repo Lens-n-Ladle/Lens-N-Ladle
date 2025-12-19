@@ -43,7 +43,6 @@ async def scan_food(file: UploadFile = File(...)):
 
     async def recipe_generator(encoded_image):
         yield ": ping\n\n" 
-        yield "data: ...Thinking...\n\n"
 
         chat_completion = client.chat.completions.create(
                                 messages=[
